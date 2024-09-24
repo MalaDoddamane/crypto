@@ -6,17 +6,17 @@ package ssh
 
 import (
 	"crypto"
-	"crypto/ecdsa"
+	ecdhcrypto "crypto/ecdh"
+	_ "crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"golang.org/x/crypto/curve25519"
 	"io"
 	"math/big"
-
-	"golang.org/x/crypto/curve25519"
 )
 
 const (
@@ -224,13 +224,24 @@ type ecdh struct {
 }
 
 func (kex *ecdh) Client(c packetConn, rand io.Reader, magics *handshakeMagics) (*kexResult, error) {
-	ephKey, err := ecdsa.GenerateKey(kex.curve, rand)
+	//Commenting the usage of depricated API ScalarMult and added dependency to use ECDH to make code compatible with Bsafe Go
+	/*	ephKey, err := ecdsa.GenerateKey(kex.curve, rand)
+	if err != nil {
+		return nil, err
+	}*/
+	// Generate ephemeral key
+	ephKey, err := ecdhcrypto.P256().GenerateKey(rand)
 	if err != nil {
 		return nil, err
 	}
 
-	kexInit := kexECDHInitMsg{
+	//Commenting the usage of depricated API ScalarMult and added dependency to use ECDH to make code compatible with Bsafe Go
+/*	kexInit := kexECDHInitMsg{
 		ClientPubKey: elliptic.Marshal(kex.curve, ephKey.PublicKey.X, ephKey.PublicKey.Y),
+	}*/
+
+	kexInit := kexECDHInitMsg{
+		ClientPubKey: ephKey.PublicKey().Bytes(),
 	}
 
 	serialized := Marshal(&kexInit)
@@ -248,21 +259,36 @@ func (kex *ecdh) Client(c packetConn, rand io.Reader, magics *handshakeMagics) (
 		return nil, err
 	}
 
-	x, y, err := unmarshalECKey(kex.curve, reply.EphemeralPubKey)
+	//Commenting the usage of depricated API ScalarMult and added dependency to use ECDH to make code compatible with Bsafe Go
+	/*x, y, err := unmarshalECKey(kex.curve, reply.EphemeralPubKey)
 	if err != nil {
 		return nil, err
 	}
 
 	// generate shared secret
-	secret, _ := kex.curve.ScalarMult(x, y, ephKey.D.Bytes())
+	secret, _ := kex.curve.ScalarMult(x, y, ephKey.D.Bytes())*/
+	// Convert the server's ephemeral public key to the appropriate format
+	serverPubKey, err := ecdhcrypto.P256().NewPublicKey(reply.EphemeralPubKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate shared secret
+	sharedSecret, err := ephKey.ECDH(serverPubKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert sharedSecret from []byte to *big.Int
+	secretInt := new(big.Int).SetBytes(sharedSecret)
 
 	h := ecHash(kex.curve).New()
 	magics.write(h)
 	writeString(h, reply.HostKey)
 	writeString(h, kexInit.ClientPubKey)
 	writeString(h, reply.EphemeralPubKey)
-	K := make([]byte, intLength(secret))
-	marshalInt(K, secret)
+	K := make([]byte, intLength(secretInt))
+	marshalInt(K, secretInt)
 	h.Write(K)
 
 	return &kexResult{
@@ -327,7 +353,8 @@ func (kex *ecdh) Server(c packetConn, rand io.Reader, magics *handshakeMagics, p
 		return nil, err
 	}
 
-	clientX, clientY, err := unmarshalECKey(kex.curve, kexECDHInit.ClientPubKey)
+	//Commenting the usage of depricated API ScalarMult and added dependency to use ECDH to make code compatible with Bsafe Go
+/*	clientX, clientY, err := unmarshalECKey(kex.curve, kexECDHInit.ClientPubKey)
 	if err != nil {
 		return nil, err
 	}
@@ -345,16 +372,37 @@ func (kex *ecdh) Server(c packetConn, rand io.Reader, magics *handshakeMagics, p
 	serializedEphKey := elliptic.Marshal(kex.curve, ephKey.PublicKey.X, ephKey.PublicKey.Y)
 
 	// generate shared secret
-	secret, _ := kex.curve.ScalarMult(clientX, clientY, ephKey.D.Bytes())
+	secret, _ := kex.curve.ScalarMult(clientX, clientY, ephKey.D.Bytes())*/
 
+	clientPubKey, err := ecdhcrypto.P256().NewPublicKey(kexECDHInit.ClientPubKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate ephemeral key
+	ephKey, err := ecdhcrypto.P256().GenerateKey(rand)
+	if err != nil {
+		return nil, err
+	}
+
+	hostKeyBytes := priv.PublicKey().Marshal()
+
+	serializedEphKey := ephKey.PublicKey().Bytes()
+
+	// Generate shared secret
+	sharedSecret, err := ephKey.ECDH(clientPubKey)
+	if err != nil {
+		return nil, err
+	}
+	secretInt := new(big.Int).SetBytes(sharedSecret)
 	h := ecHash(kex.curve).New()
 	magics.write(h)
 	writeString(h, hostKeyBytes)
 	writeString(h, kexECDHInit.ClientPubKey)
 	writeString(h, serializedEphKey)
 
-	K := make([]byte, intLength(secret))
-	marshalInt(K, secret)
+	K := make([]byte, intLength(secretInt))
+	marshalInt(K, secretInt)
 	h.Write(K)
 
 	H := h.Sum(nil)
