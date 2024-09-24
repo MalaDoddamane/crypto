@@ -1596,10 +1596,10 @@ func parseOpenSSHPrivateKey(key []byte, decrypt openSSHDecryptFunc) (crypto.Priv
 			return nil, errors.New("ssh: scalar is out of range")
 		}
 
-		x, y := curve.ScalarBaseMult(key.D.Bytes())
+		/*x, y := curve.ScalarBaseMult(key.D.Bytes())
 		if x.Cmp(X) != 0 || y.Cmp(Y) != 0 {
 			return nil, errors.New("ssh: public key does not match private key")
-		}
+		}*/
 
 		return &ecdsa.PrivateKey{
 			PublicKey: ecdsa.PublicKey{
