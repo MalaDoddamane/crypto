@@ -1,6 +1,6 @@
-module golang.org/x/crypto
+module github.com/maladoddamane/crypto
 
-go 1.20
+go 1.22
 
 require (
 	golang.org/x/net v0.21.0 // tagx:ignore
