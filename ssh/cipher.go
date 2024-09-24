@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"hash"
 	"io"
-
-	"golang.org/x/crypto/chacha20"
 	"github.com/maladoddamane/crypto/internal/poly1305"
+	"golang.org/x/crypto/chacha20"
+	
 )
 
 const (
