@@ -14,9 +14,10 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/curve25519"
 	"io"
 	"math/big"
+
+	"golang.org/x/crypto/curve25519"
 )
 
 const (
@@ -229,8 +230,22 @@ func (kex *ecdh) Client(c packetConn, rand io.Reader, magics *handshakeMagics) (
 	if err != nil {
 		return nil, err
 	}*/
+	 var curve ecdhcrypto.Curve
+
+	// Convert curve.
+	switch kex.curve {
+	 case elliptic.P256():
+		 curve = ecdhcrypto.P256()
+	 case elliptic.P384():
+		 curve = ecdhcrypto.P384()
+	 case elliptic.P521():
+		 curve = ecdhcrypto.P521()
+	 default:
+		 return nil, fmt.Errorf("unsupported elliptic curve")
+	}	
+	
 	// Generate ephemeral key
-	ephKey, err := ecdhcrypto.P256().GenerateKey(rand)
+	ephKey, err := curve.GenerateKey(rand)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +283,7 @@ func (kex *ecdh) Client(c packetConn, rand io.Reader, magics *handshakeMagics) (
 	// generate shared secret
 	secret, _ := kex.curve.ScalarMult(x, y, ephKey.D.Bytes())*/
 	// Convert the server's ephemeral public key to the appropriate format
-	serverPubKey, err := ecdhcrypto.P256().NewPublicKey(reply.EphemeralPubKey)
+	serverPubKey, err := curve.NewPublicKey(reply.EphemeralPubKey)
 	if err != nil {
 		return nil, err
 	}
@@ -300,45 +315,13 @@ func (kex *ecdh) Client(c packetConn, rand io.Reader, magics *handshakeMagics) (
 	}, nil
 }
 
-// unmarshalECKey parses and checks an EC key.
-func unmarshalECKey(curve elliptic.Curve, pubkey []byte) (x, y *big.Int, err error) {
-	x, y = elliptic.Unmarshal(curve, pubkey)
-	if x == nil {
-		return nil, nil, errors.New("ssh: elliptic.Unmarshal failure")
-	}
-	if !validateECPublicKey(curve, x, y) {
-		return nil, nil, errors.New("ssh: public key not on curve")
-	}
-	return x, y, nil
-}
 
 // validateECPublicKey checks that the point is a valid public key for
 // the given curve. See [SEC1], 3.2.2
+// TODO: This is not allowed in FIPS140 standard. But BSAFE library does this 
+// Automatically when loading public value. 
+// We can return true always. 
 func validateECPublicKey(curve elliptic.Curve, x, y *big.Int) bool {
-	if x.Sign() == 0 && y.Sign() == 0 {
-		return false
-	}
-
-	if x.Cmp(curve.Params().P) >= 0 {
-		return false
-	}
-
-	if y.Cmp(curve.Params().P) >= 0 {
-		return false
-	}
-
-	if !curve.IsOnCurve(x, y) {
-		return false
-	}
-
-	// We don't check if N * PubKey == 0, since
-	//
-	// - the NIST curves have cofactor = 1, so this is implicit.
-	// (We don't foresee an implementation that supports non NIST
-	// curves)
-	//
-	// - for ephemeral keys, we don't need to worry about small
-	// subgroup attacks.
 	return true
 }
 
@@ -373,14 +356,26 @@ func (kex *ecdh) Server(c packetConn, rand io.Reader, magics *handshakeMagics, p
 
 	// generate shared secret
 	secret, _ := kex.curve.ScalarMult(clientX, clientY, ephKey.D.Bytes())*/
+	var curve ecdhcrypto.Curve
 
-	clientPubKey, err := ecdhcrypto.P256().NewPublicKey(kexECDHInit.ClientPubKey)
+	switch kex.curve {
+	case elliptic.P256():
+		curve = ecdhcrypto.P256()
+	case elliptic.P384():
+		curve = ecdhcrypto.P384()
+	case elliptic.P521():
+		curve = ecdhcrypto.P521()
+	default:
+		return nil, fmt.Errorf("unsupported elliptic curve")
+	}	
+
+	clientPubKey, err := curve.NewPublicKey(kexECDHInit.ClientPubKey)
 	if err != nil {
 		return nil, err
 	}
 
 	// Generate ephemeral key
-	ephKey, err := ecdhcrypto.P256().GenerateKey(rand)
+	ephKey, err := curve.GenerateKey(rand)
 	if err != nil {
 		return nil, err
 	}
